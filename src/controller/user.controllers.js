@@ -4,6 +4,9 @@ import {ApiError} from "../utils/ApiError.js"
 import {User} from "../models/user_models.js"
 import { ApiResponse } from "../utils/Apiresponse.js"
 import { deleteFromCloudinary, uploadOnCloudinary } from "../utils/cloudinary.js"
+
+
+import jwt from "jsonwebtoken"
 const registered_user =  asyncHandler(async(req,res)=>{
 
     const {fullname,email,username,password} = req.body
@@ -175,7 +178,61 @@ const loginUser = asyncHandler(async (req,res)=>{
         "User logged in successfully"))
     
 })
+
+const refreshAccessToken = asyncHandler( async(req,res)=>{
+    const incomingRefreshToken = req.cookie.refreshToken ||req.body.refreshToken
+
+    if(!incomingRefreshToken){
+        throw new ApiError(401,"Refresh token is needed")
+    }
+
+    try {
+            const decodedToken = jwt.verify(
+                incomingRefreshToken,
+                process.env.REFRESH_SECRET_TOKEN
+            )
+
+            const user = await User.findById(decodedToken?._id)
+
+            if(!user){
+                throw new ApiError(401,"Invalid refreshTokne")
+            }
+
+            if(user?.refreshToken!==incomingRefreshToken){
+                throw new ApiError(401,"Invalid Refresh Token ")
+            }
+
+            const options = {
+                httpOnly:true,
+                secure:process.env.NODE_ENV==="production"
+            }
+
+           const {accessToken,refreshToken:newRefreshToken} = await generateAccessandRefreshToken(user._id)
+
+           return res.cookie("accessToken",accessToken,options).
+           cookie("refreshToken",newRefreshToken,options).
+           json(
+              new ApiError(200,
+            {accessToken,
+                
+                refreshToken:newRefreshToken},
+            "Access token refreshed successfully"
+        )).
+
+           status(200)
+    } catch (error) {
+        throw new ApiError(500,"Something went wrong with refreshAccessToken")
+        
+    }
+})
+
+const loggoutUser = asyncHandler(async(req,res)=>{
+    await User.findByIdAndUpdate(
+        req.user._id
+    )
+})
 export {
     registered_user,
-    loginUser
+    loginUser,
+    refreshAccessToken
 }
